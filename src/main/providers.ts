@@ -269,11 +269,18 @@ function isFreeModel(m: unknown): boolean {
   return false
 }
 
-// Drop models that can't hold a chat: safety/guard classifiers, audio (whisper/tts),
-// embeddings, moderation, rerankers, and image generators. These otherwise pollute the
-// brain/role dropdowns and, if picked, produce nonsense (e.g. a guard model only ever
-// replies "User Safety: safe"). Users can still type a filtered id into the box by hand.
-const NON_CHAT_MODEL = /guard|whisper|embed|moderation|rerank|tts|transcrib|dall-?e|imagen|gpt-image|playai|\baqa\b/i
+// Drop models that can't hold a text chat: safety/guard classifiers, audio (whisper/tts/
+// native-audio/orpheus), embeddings, moderation, rerankers, image/video/music generators
+// (dall-e/imagen/veo/lyria/nano-banana), realtime/live streaming, robotics, and computer-use.
+// These otherwise pollute the model lists and, if picked, error or reply nonsense (e.g. a
+// guard model only ever says "User Safety: safe"). Users can still type a filtered id by hand.
+const NON_CHAT_MODEL =
+  /guard|safeguard|content-safety|whisper|embed|moderation|rerank|tts|transcrib|dall-?e|imagen|image|veo|lyria|audio|orpheus|playai|robotics|computer-use|nano-banana|realtime|-live\b|deep-research|\baqa\b/i
+
+/** True if a model id looks like a non-chat model (embeddings, audio, image, guard, …). */
+export function isNonChatModel(id: string): boolean {
+  return NON_CHAT_MODEL.test(id)
+}
 
 export function parseModelList(body: unknown, freeOnly = false): string[] {
   const b = body as { data?: unknown[]; models?: unknown[] }

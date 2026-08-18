@@ -79,7 +79,7 @@ describe('isQuotaError', () => {
 })
 
 describe('parseModelList non-chat', () => {
-  it('drops non-chat models (guard, whisper, embeddings, tts, image)', () => {
+  it('drops non-chat models (guard, whisper, embeddings, tts, image, video, audio, aqa)', () => {
     const body = {
       data: [
         { id: 'llama-3.3-70b-versatile' },
@@ -88,6 +88,12 @@ describe('parseModelList non-chat', () => {
         { id: 'text-embedding-3-small' },
         { id: 'playai-tts' },
         { id: 'dall-e-3' },
+        { id: 'veo-3.1-generate-preview' },
+        { id: 'lyria-3-pro-preview' },
+        { id: 'gemini-2.5-flash-native-audio' },
+        { id: 'gemini-2.5-flash-image' },
+        { id: 'nano-banana-pro-preview' },
+        { id: 'aqa' },
         { id: 'gpt-4o' }
       ]
     }

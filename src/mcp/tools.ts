@@ -10,7 +10,7 @@ import {
   type ScanOptions
 } from '../main/discovery'
 import { chatStream, type ChatHandlers, type ChatOptions } from '../main/ollamaClient'
-import { providerChat, listProviderModels, DEFAULT_BASE } from '../main/providers'
+import { providerChat, listProviderModels, isNonChatModel, DEFAULT_BASE } from '../main/providers'
 import { runCollaboration, type AgentConfig, type AskFn, type EmittedTurn } from '../main/orchestrator'
 import { ProjectFiles } from '../main/fileTools'
 import { Notifier, type NotifyLevel } from '../main/notifier'
@@ -160,6 +160,9 @@ export class ToolContext {
           models = []
         }
       }
+      // Filter non-chat models here too — env-provided lists skip the fetch-time filter, and
+      // Claude can't do anything useful with embeddings/audio/image/guard models anyway.
+      models = models.filter((m) => !isNonChatModel(m))
       if (models.length === 0) continue
       out.push({
         id: `cloud:${id}`,
