@@ -18,6 +18,7 @@ export const IPC = {
   getSettings: 'settings:get',
   setSettings: 'settings:set',
   listProviderModels: 'settings:listProviderModels',
+  validateProviderModels: 'settings:validateProviderModels',
   openExternal: 'sys:openExternal',
   pickFolder: 'project:pickFolder',
   getProjectFolder: 'project:getFolder',

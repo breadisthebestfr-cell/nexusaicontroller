@@ -43,6 +43,18 @@ export interface CloudModelListResult {
   error?: string
 }
 
+/** Result of validating a provider's configured models by pinging each. */
+export interface CloudValidateResult {
+  /** Replied normally. */
+  ok: string[]
+  /** Gone (404 / retired / removed) — should be pruned. */
+  dead: string[]
+  /** Rate-limited/quota (transient) — keep. */
+  quota: string[]
+  /** Other errors (ambiguous) — keep. */
+  errors: Array<{ model: string; error: string }>
+}
+
 export interface OllamaInstance {
   /** Stable id: `${host}:${port}` */
   id: string

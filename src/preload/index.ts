@@ -5,6 +5,7 @@ import type {
   ChatChunk,
   ChatMessage,
   CloudModelListResult,
+  CloudValidateResult,
   LocalOllamaStatus,
   ManualHost,
   OllamaInstance,
@@ -52,6 +53,8 @@ const api = {
   setSettings: (patch: Partial<AppSettings>): Promise<AppSettings> => ipcRenderer.invoke(IPC.setSettings, patch),
   listProviderModels: (args: { providerId: string; apiKey: string; baseUrl?: string; freeOnly?: boolean }): Promise<CloudModelListResult> =>
     ipcRenderer.invoke(IPC.listProviderModels, args),
+  validateProviderModels: (args: { providerId: string; apiKey: string; baseUrl?: string; models: string[] }): Promise<CloudValidateResult> =>
+    ipcRenderer.invoke(IPC.validateProviderModels, args),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke(IPC.openExternal, url),
 
   pickFolder: (): Promise<string | null> => ipcRenderer.invoke(IPC.pickFolder),

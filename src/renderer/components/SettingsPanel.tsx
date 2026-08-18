@@ -70,6 +70,23 @@ export function SettingsPanel(): JSX.Element {
     }
   }
 
+  const validateModels = async (id: string) => {
+    const cfg = settings.cloudProviders[id]
+    if (!cfg?.apiKey || cfg.models.length === 0) {
+      setModelStatus((s) => ({ ...s, [id]: 'Add a key and some models first.' }))
+      return
+    }
+    setModelStatus((s) => ({ ...s, [id]: `Testing ${cfg.models.length} models… (this can take a moment)` }))
+    const r = await window.api.validateProviderModels({ providerId: id, apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, models: cfg.models })
+    // Keep everything that isn't confirmed gone: working + rate-limited + ambiguous errors.
+    const keep = [...r.ok, ...r.quota, ...r.errors.map((e) => e.model)].sort()
+    setProvider(id, { models: keep })
+    const bits = [`${r.ok.length} ok`]
+    if (r.quota.length) bits.push(`${r.quota.length} rate-limited (kept)`)
+    if (r.dead.length) bits.push(`${r.dead.length} removed`)
+    setModelStatus((s) => ({ ...s, [id]: `${bits.join(' · ')}${r.dead.length ? ' — Save to keep.' : ''}` }))
+  }
+
   const testWebhook = async () => {
     setTestResult('Sending…')
     // Persist first so the main process tests the current URL.
@@ -370,6 +387,9 @@ export function SettingsPanel(): JSX.Element {
               </button>
               <button onClick={() => fetchModels(id, true)} disabled={!cfg.apiKey} title="Only models this provider reports as free (e.g. OpenRouter :free)">
                 Free only
+              </button>
+              <button onClick={() => validateModels(id)} disabled={!cfg.apiKey || cfg.models.length === 0} title="Ping each model and remove ones that are gone (404/retired). Keeps rate-limited ones.">
+                Validate &amp; clean
               </button>
               {modelStatus[id] && <span className="small muted">{modelStatus[id]}</span>}
             </div>

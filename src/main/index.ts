@@ -32,7 +32,7 @@ import {
 } from './discovery'
 import { pullModel, getVersion, listModels, listRunningModels, deleteModel, setModelLoaded } from './ollamaClient'
 import { chat } from './chat'
-import { listProviderModels, isQuotaError } from './providers'
+import { listProviderModels, validateModels, isQuotaError } from './providers'
 import { startControlServer, type ControlServer } from './controlServer'
 import { runCollaboration, type AgentConfig, type AskFn, type ToolExecutor } from './orchestrator'
 import { ProjectFiles, resolveInRoot } from './fileTools'
@@ -491,6 +491,12 @@ function registerIpc(): void {
     IPC.listProviderModels,
     (_e, args: { providerId: string; apiKey: string; baseUrl?: string; freeOnly?: boolean }) =>
       listProviderModels(args.providerId, { apiKey: args.apiKey, baseUrl: args.baseUrl }, args.freeOnly)
+  )
+
+  ipcMain.handle(
+    IPC.validateProviderModels,
+    (_e, args: { providerId: string; apiKey: string; baseUrl?: string; models: string[] }) =>
+      validateModels(args.providerId, { apiKey: args.apiKey, baseUrl: args.baseUrl }, args.models)
   )
 
   // Open a URL in the user's default browser (used by the "free API keys" links).

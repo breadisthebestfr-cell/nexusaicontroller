@@ -6,7 +6,7 @@
 // ending in `data: [DONE]`; Anthropic uses typed SSE events with content_block_delta.
 
 import type { ChatHandlers, ChatOptions } from './ollamaClient'
-import type { ChatMessage, CloudModelListResult } from '../shared/types'
+import type { ChatMessage, CloudModelListResult, CloudValidateResult } from '../shared/types'
 
 export interface ProviderConfig {
   apiKey: string
@@ -225,6 +225,75 @@ export function isQuotaError(message: string): boolean {
     (m.includes('insufficient') && m.includes('credit')) ||
     m.includes('out of credit')
   )
+}
+
+/** Does an error mean the model is permanently gone (retired / removed / paid-only), vs a
+ * transient quota/rate issue? Only "gone" models should be pruned. */
+export function isModelGoneError(message: string): boolean {
+  const m = message.toLowerCase()
+  return (
+    /\b404\b/.test(m) ||
+    m.includes('not_found') ||
+    m.includes('not found') ||
+    m.includes('no longer available') ||
+    m.includes('unavailable') ||
+    m.includes('does not exist') ||
+    m.includes('model_not_found') ||
+    m.includes('invalid model') ||
+    m.includes('decommission')
+  )
+}
+
+/** Send a minimal request to one model and classify the outcome. */
+function pingModel(
+  providerId: string,
+  cfg: ProviderConfig,
+  model: string
+): Promise<{ status: 'ok' | 'dead' | 'quota' | 'error'; error?: string }> {
+  return new Promise((resolve) => {
+    let settled = false
+    const done = (r: { status: 'ok' | 'dead' | 'quota' | 'error'; error?: string }) => {
+      if (!settled) {
+        settled = true
+        resolve(r)
+      }
+    }
+    providerChat(providerId, cfg, model, [{ role: 'user', content: 'hi' }], {
+      onDelta: () => {},
+      onDone: () => done({ status: 'ok' }),
+      onError: (msg) =>
+        done({ status: isModelGoneError(msg) ? 'dead' : isQuotaError(msg) ? 'quota' : 'error', error: msg })
+    })
+  })
+}
+
+/**
+ * Ping every model (bounded concurrency) and classify each as working, dead (should be
+ * removed), rate-limited (keep — transient), or other error (keep — ambiguous).
+ */
+export async function validateModels(
+  providerId: string,
+  cfg: { apiKey: string; baseUrl?: string },
+  models: string[]
+): Promise<CloudValidateResult> {
+  const out: CloudValidateResult = { ok: [], dead: [], quota: [], errors: [] }
+  if (!cfg.apiKey) return { ...out, errors: models.map((m) => ({ model: m, error: 'no API key' })) }
+  const full: ProviderConfig = { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, models: [] }
+  const queue = [...models]
+  const worker = async () => {
+    for (;;) {
+      const model = queue.shift()
+      if (model === undefined) return
+      const r = await pingModel(providerId, full, model)
+      if (r.status === 'ok') out.ok.push(model)
+      else if (r.status === 'dead') out.dead.push(model)
+      else if (r.status === 'quota') out.quota.push(model)
+      else out.errors.push({ model, error: r.error ?? 'unknown' })
+    }
+  }
+  // Gentle concurrency so validation doesn't self-inflict rate limits (which stay "quota" = kept).
+  await Promise.all([worker(), worker(), worker()])
+  return out
 }
 
 /** Route to the right provider implementation. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_BASE, isQuotaError, parseAnthropicDelta, parseModelList, parseOpenAIDelta } from '../providers'
+import { DEFAULT_BASE, isModelGoneError, isQuotaError, parseAnthropicDelta, parseModelList, parseOpenAIDelta } from '../providers'
 
 describe('parseOpenAIDelta', () => {
   it('reads the streamed content delta', () => {
@@ -75,6 +75,18 @@ describe('isQuotaError', () => {
   it('ignores unrelated errors', () => {
     expect(isQuotaError('HTTP 404 model not found')).toBe(false)
     expect(isQuotaError('connection refused')).toBe(false)
+  })
+})
+
+describe('isModelGoneError', () => {
+  it('flags retired / removed / not-found models', () => {
+    expect(isModelGoneError('HTTP 404 This model is no longer available to new users')).toBe(true)
+    expect(isModelGoneError('model_not_found')).toBe(true)
+    expect(isModelGoneError('This model is unavailable for free')).toBe(true)
+  })
+  it('does NOT flag a transient quota error as gone', () => {
+    expect(isModelGoneError('HTTP 429 You exceeded your current quota')).toBe(false)
+    expect(isModelGoneError('rate limit')).toBe(false)
   })
 })
 
