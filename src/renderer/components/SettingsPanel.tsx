@@ -79,7 +79,7 @@ export function SettingsPanel(): JSX.Element {
   }
 
   // MCP registration snippet for Claude Code.
-  const [mcp, setMcp] = useState<{ command: string; json: string; entry: string } | null>(null)
+  const [mcp, setMcp] = useState<{ command: string; json: string; entry: string; hasCloud: boolean } | null>(null)
   const [copied, setCopied] = useState('')
   const [ctrl, setCtrl] = useState<{ enabled: boolean; running: boolean; port: number; lan: boolean; token: string; urls: string[]; error: string | null } | null>(null)
   useEffect(() => {
@@ -388,9 +388,16 @@ export function SettingsPanel(): JSX.Element {
 
       <h2 style={{ marginTop: 22 }}>Connect to Claude Code (MCP)</h2>
       <p className="small muted">
-        Let Claude Code drive your local models through this app's MCP server. Run <strong>one</strong> of the
+        Let Claude Code drive your models through this app's MCP server. Run <strong>one</strong> of the
         following on the machine where you use Claude Code (this checkout must be present). Then restart Claude
         Code and ask it to use the <code>localai</code> tools.
+        {mcp?.hasCloud && (
+          <>
+            {' '}
+            <strong>This includes your configured cloud API keys</strong> so Claude can use cloud models too —
+            treat the snippet as a secret.
+          </>
+        )}
       </p>
       {mcp && (
         <>

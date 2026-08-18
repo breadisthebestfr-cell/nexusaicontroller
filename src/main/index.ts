@@ -874,9 +874,23 @@ function registerIpc(): void {
   ipcMain.handle(IPC.getMcpConfig, () => {
     // Forward slashes work for npx/tsx on every OS and avoid JSON backslash escaping.
     const entry = path.join(process.cwd(), 'src', 'mcp', 'index.ts').replace(/\\/g, '/')
-    const command = `claude mcp add localai -- npx -y tsx "${entry}"`
-    const json = JSON.stringify({ mcpServers: { localai: { command: 'npx', args: ['-y', 'tsx', entry] } } }, null, 2)
-    return { command, json, entry }
+    // Inject the user's configured cloud keys as env so the MCP process can offer cloud models too.
+    const env: Record<string, string> = {}
+    for (const [id, cfg] of Object.entries(store.getSettings().cloudProviders)) {
+      if (!cfg.apiKey) continue
+      env[`LOCALAI_${id.toUpperCase()}_KEY`] = cfg.apiKey
+      if (cfg.models.length) env[`LOCALAI_${id.toUpperCase()}_MODELS`] = cfg.models.join(',')
+    }
+    const envFlags = Object.entries(env)
+      .map(([k, v]) => `-e ${k}=${v}`)
+      .join(' ')
+    const command = `claude mcp add localai ${envFlags ? envFlags + ' ' : ''}-- npx -y tsx "${entry}"`
+    const json = JSON.stringify(
+      { mcpServers: { localai: { command: 'npx', args: ['-y', 'tsx', entry], ...(Object.keys(env).length ? { env } : {}) } } },
+      null,
+      2
+    )
+    return { command, json, entry, hasCloud: Object.keys(env).length > 0 }
   })
 
   // --- OS integration: open / reveal in the file explorer ---

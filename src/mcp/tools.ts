@@ -9,8 +9,9 @@ import {
   scanLan,
   type ScanOptions
 } from '../main/discovery'
-import { chatStream } from '../main/ollamaClient'
-import { runCollaboration, type AgentConfig, type EmittedTurn } from '../main/orchestrator'
+import { chatStream, type ChatHandlers, type ChatOptions } from '../main/ollamaClient'
+import { providerChat, listProviderModels, DEFAULT_BASE } from '../main/providers'
+import { runCollaboration, type AgentConfig, type AskFn, type EmittedTurn } from '../main/orchestrator'
 import { ProjectFiles } from '../main/fileTools'
 import { Notifier, type NotifyLevel } from '../main/notifier'
 import { DEFAULT_SETTINGS, type ChatMessage, type ManualHost, type OllamaInstance } from '../shared/types'
@@ -38,6 +39,35 @@ export function parsePinnedHosts(raw: string | undefined): ManualHost[] {
   return hosts
 }
 
+/** Cloud provider config for the MCP process, read from env (no electron-store here). */
+export interface McpCloudConfig {
+  apiKey: string
+  baseUrl?: string
+  /** Explicit model list; if empty, the provider's /models endpoint is queried. */
+  models: string[]
+}
+
+/**
+ * Read cloud provider keys from env so the standalone MCP process can offer cloud models too.
+ * For each known provider <P>: LOCALAI_<P>_KEY (required), LOCALAI_<P>_MODELS (comma list,
+ * optional — else fetched live), LOCALAI_<P>_BASE (optional base-URL override).
+ * e.g. LOCALAI_OPENAI_KEY, LOCALAI_GROQ_KEY, LOCALAI_ANTHROPIC_KEY, LOCALAI_GEMINI_KEY.
+ */
+export function cloudConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Record<string, McpCloudConfig> {
+  const out: Record<string, McpCloudConfig> = {}
+  for (const id of Object.keys(DEFAULT_BASE)) {
+    const U = id.toUpperCase()
+    const apiKey = env[`LOCALAI_${U}_KEY`]
+    if (!apiKey) continue
+    const models = (env[`LOCALAI_${U}_MODELS`] ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    out[id] = { apiKey, baseUrl: env[`LOCALAI_${U}_BASE`] || undefined, models }
+  }
+  return out
+}
+
 export interface ToolsConfig {
   /** Pinned hosts always inspected regardless of scan results. */
   pinnedHosts: ManualHost[]
@@ -45,14 +75,40 @@ export interface ToolsConfig {
   scanEnabled: boolean
   /** Instance-cache TTL in ms. */
   cacheTtlMs: number
+  /** Cloud providers keyed by id (from env). Optional so callers/tests can omit it. */
+  cloud?: Record<string, McpCloudConfig>
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): ToolsConfig {
   return {
     pinnedHosts: parsePinnedHosts(env.LOCALAI_OLLAMA_HOSTS),
     scanEnabled: env.LOCALAI_SCAN !== '0',
-    cacheTtlMs: Number(env.LOCALAI_CACHE_TTL_MS) || 30_000
+    cacheTtlMs: Number(env.LOCALAI_CACHE_TTL_MS) || 30_000,
+    cloud: cloudConfigFromEnv(env)
   }
+}
+
+/**
+ * Chat router for the MCP process: `cloud:<provider>` goes to providerChat with the key from
+ * env; anything else is a plain Ollama base URL. Mirrors the app's chat.ts but env-backed.
+ */
+function mcpChat(
+  baseUrl: string,
+  model: string,
+  messages: ChatMessage[],
+  handlers: ChatHandlers,
+  options?: ChatOptions
+): Promise<void> {
+  if (baseUrl.startsWith('cloud:')) {
+    const id = baseUrl.slice('cloud:'.length)
+    const cfg = cloudConfigFromEnv()[id]
+    if (!cfg) {
+      handlers.onError(`No cloud key for "${id}" — set LOCALAI_${id.toUpperCase()}_KEY for the MCP server`)
+      return Promise.resolve()
+    }
+    return providerChat(id, { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, models: cfg.models }, model, messages, handlers, options)
+  }
+  return chatStream(baseUrl, model, messages, handlers, options)
 }
 
 // ---------------------------------------------------------------------------
@@ -86,8 +142,38 @@ export class ToolContext {
     }
 
     const merged = dedupeSelf(mergeInstances(scanned.filter((i) => i.online), pinned).filter((i) => i.online))
-    this.cache = { instances: merged, at: Date.now() }
-    return merged
+    const all = [...merged, ...(await this.cloudInstances())]
+    this.cache = { instances: all, at: Date.now() }
+    return all
+  }
+
+  /** Cloud providers (from env) as pseudo-instances. Models come from env or a live /models fetch. */
+  private async cloudInstances(): Promise<OllamaInstance[]> {
+    const out: OllamaInstance[] = []
+    for (const [id, cfg] of Object.entries(this.config.cloud ?? {})) {
+      let models = cfg.models
+      if (models.length === 0) {
+        try {
+          const res = await listProviderModels(id, { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl })
+          models = res.ok ? res.models : []
+        } catch {
+          models = []
+        }
+      }
+      if (models.length === 0) continue
+      out.push({
+        id: `cloud:${id}`,
+        host: id,
+        port: 0,
+        baseUrl: `cloud:${id}`,
+        online: true,
+        version: 'cloud',
+        models: models.map((m) => ({ name: m })),
+        source: 'cloud',
+        lastSeen: Date.now()
+      })
+    }
+    return out
   }
 }
 
@@ -140,7 +226,7 @@ export interface AskModelArgs {
   system?: string
 }
 
-/** Single-shot completion against one local model; collects the streamed reply. */
+/** Single-shot completion against one model (local or cloud); collects the streamed reply. */
 export async function askModel(args: AskModelArgs): Promise<string> {
   const messages: ChatMessage[] = []
   if (args.system) messages.push({ role: 'system', content: args.system })
@@ -148,13 +234,34 @@ export async function askModel(args: AskModelArgs): Promise<string> {
 
   return new Promise<string>((resolve, reject) => {
     let out = ''
-    chatStream(args.baseUrl, args.model, messages, {
+    mcpChat(args.baseUrl, args.model, messages, {
       onDelta: (t) => (out += t),
       onDone: () => resolve(out),
       onError: (m) => reject(new Error(m))
     })
   })
 }
+
+/** Cloud/Ollama-aware completion function for the orchestrator loop inside runTask. */
+const mcpAsk: AskFn = (agent, messages, onDelta, signal, options) =>
+  new Promise<string>((resolve, reject) => {
+    let out = ''
+    mcpChat(
+      agent.baseUrl,
+      agent.model,
+      messages,
+      {
+        signal,
+        onDelta: (t) => {
+          out += t
+          onDelta(t)
+        },
+        onDone: () => resolve(out),
+        onError: (m) => reject(new Error(m))
+      },
+      options
+    )
+  })
 
 export interface RoleModel {
   baseUrl: string
@@ -207,7 +314,8 @@ export async function runTask(args: RunTaskArgs): Promise<RunTaskResult> {
           error = m
           resolve()
         }
-      }
+      },
+      { ask: mcpAsk } // route cloud vs Ollama per agent
     )
   })
 

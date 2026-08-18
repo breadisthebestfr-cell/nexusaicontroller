@@ -37,7 +37,8 @@ const api = {
   ollamaDelete: (model: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke(IPC.ollamaDelete, model),
   ollamaSetLoaded: (model: string, load: boolean): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke(IPC.ollamaSetLoaded, { model, load }),
-  getMcpConfig: (): Promise<{ command: string; json: string; entry: string }> => ipcRenderer.invoke(IPC.getMcpConfig),
+  getMcpConfig: (): Promise<{ command: string; json: string; entry: string; hasCloud: boolean }> =>
+    ipcRenderer.invoke(IPC.getMcpConfig),
   getControlInfo: (): Promise<{ enabled: boolean; running: boolean; port: number; lan: boolean; token: string; urls: string[]; error: string | null }> =>
     ipcRenderer.invoke(IPC.getControlInfo),
   onPullProgress: (

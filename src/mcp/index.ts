@@ -7,6 +7,9 @@
 //   LOCALAI_OLLAMA_HOSTS="192.168.1.20:11434,192.168.1.30:11434"  pinned hosts
 //   LOCALAI_SCAN=0                                                 disable the LAN sweep
 //   LOCALAI_CACHE_TTL_MS=30000                                     discovery cache TTL
+//   Cloud models (so Claude can use them too): LOCALAI_<PROVIDER>_KEY, e.g.
+//   LOCALAI_OPENAI_KEY, LOCALAI_GROQ_KEY, LOCALAI_ANTHROPIC_KEY, LOCALAI_GEMINI_KEY.
+//   Optional per-provider: LOCALAI_<P>_MODELS="a,b" (else fetched), LOCALAI_<P>_BASE=<url>
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { buildServer } from './server'
@@ -16,7 +19,7 @@ async function main(): Promise<void> {
   const config = configFromEnv()
   log(
     `starting — scan=${config.scanEnabled ? 'on' : 'off'}, pinned=${config.pinnedHosts.length}, ` +
-      `cacheTtl=${config.cacheTtlMs}ms`
+      `cloud=${Object.keys(config.cloud ?? {}).join(',') || 'none'}, cacheTtl=${config.cacheTtlMs}ms`
   )
   const server = buildServer(config)
   const transport = new StdioServerTransport()

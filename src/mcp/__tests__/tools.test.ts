@@ -7,6 +7,7 @@ import { startMockOllama } from '../../../scripts/mock-ollama'
 import {
   ToolContext,
   askModel,
+  cloudConfigFromEnv,
   configFromEnv,
   listInstances,
   listModels,
@@ -32,6 +33,23 @@ describe('configFromEnv', () => {
     const cfg = configFromEnv({ LOCALAI_SCAN: '0', LOCALAI_OLLAMA_HOSTS: '127.0.0.1:11434' } as NodeJS.ProcessEnv)
     expect(cfg.scanEnabled).toBe(false)
     expect(cfg.pinnedHosts).toEqual([{ host: '127.0.0.1', port: 11434 }])
+  })
+})
+
+describe('cloudConfigFromEnv', () => {
+  it('reads provider keys, model lists, and base overrides from env', () => {
+    const cloud = cloudConfigFromEnv({
+      LOCALAI_OPENAI_KEY: 'sk-1',
+      LOCALAI_OPENAI_MODELS: 'gpt-4o, gpt-4o-mini',
+      LOCALAI_GROQ_KEY: 'gsk-2',
+      LOCALAI_GROQ_BASE: 'https://example/v1'
+    } as NodeJS.ProcessEnv)
+    expect(cloud.openai).toEqual({ apiKey: 'sk-1', baseUrl: undefined, models: ['gpt-4o', 'gpt-4o-mini'] })
+    expect(cloud.groq).toEqual({ apiKey: 'gsk-2', baseUrl: 'https://example/v1', models: [] })
+    expect(cloud.anthropic).toBeUndefined()
+  })
+  it('is empty when no keys are set', () => {
+    expect(cloudConfigFromEnv({} as NodeJS.ProcessEnv)).toEqual({})
   })
 })
 
